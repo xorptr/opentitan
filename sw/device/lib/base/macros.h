@@ -624,6 +624,12 @@ extern "C++" {
  */
 #define OT_USED __attribute__((used))
 
+
+/**
+ * An attribute used for aligning data to 4-byte word boundary
+ */
+#define OT_WORD_ALIGNED __attribute__((aligned(sizeof(uint32_t))))
+
 /**
  * An attribute used to indicate that a character array variable is not intended
  * to be treated as a null-terminated string.

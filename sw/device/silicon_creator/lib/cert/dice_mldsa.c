@@ -20,6 +20,7 @@
 #include "sw/device/silicon_creator/lib/base/static_dice_mldsa_cdi.h"
 #include "sw/device/silicon_creator/lib/base/util.h"
 #include "sw/device/silicon_creator/lib/cert/cdi_hybrid.h"
+#include "sw/device/silicon_creator/lib/cert/cert.h"
 #include "sw/device/silicon_creator/lib/cert/dice.h"
 #include "sw/device/silicon_creator/lib/cert/dice_chain.h"
 #include "sw/device/silicon_creator/lib/cert/dice_keys.h"
@@ -27,6 +28,7 @@
 #include "sw/device/silicon_creator/lib/cert/ram_msg.h"
 #include "sw/device/silicon_creator/lib/cert/seeds.h"
 #include "sw/device/silicon_creator/lib/cert/template.h"
+#include "sw/device/silicon_creator/lib/cert/uds.h"  // Generated
 #include "sw/device/silicon_creator/lib/dbg_print.h"
 #include "sw/device/silicon_creator/lib/drivers/flash_ctrl.h"
 #include "sw/device/silicon_creator/lib/drivers/hmac.h"
@@ -37,6 +39,7 @@
 #include "sw/device/silicon_creator/lib/error.h"
 #include "sw/device/silicon_creator/lib/otbn_boot_services.h"
 #include "sw/device/silicon_creator/lib/ownership/ownership_key.h"
+#include "sw/device/silicon_creator/lib/sigverify/mldsa_key.h"
 #include "sw/device/silicon_creator/manuf/base/perso_tlv_data.h"
 #include "sw/device/silicon_creator/manuf/lib/flash_info_fields.h"
 #include "sw/device/silicon_creator/rom_ext/rom_ext_boot_policy_ptrs.h"
@@ -706,5 +709,58 @@ rom_error_t dice_attest_cdi_1(const manifest_t *owner_manifest,
     msg->ids.hdr.version = 0;
   }
 
+  return kErrorOk;
+}
+
+// Copied from `dice.c`
+/**
+ * Returns true if debug (JTAG) access is exposed in the current LC state.
+ */
+static bool is_debug_exposed(void) {
+  lifecycle_state_t lc_state = lifecycle_state_get();
+  if (lc_state == kLcStateProd || lc_state == kLcStateProdEnd) {
+    return false;
+  }
+  return true;
+}
+
+rom_error_t dice_uds_mldsa_tbs_cert_build(
+    const hmac_digest_t *otp_creator_sw_cfg_measurement,
+    const hmac_digest_t *otp_owner_sw_cfg_measurement,
+    const hmac_digest_t *otp_rot_creator_auth_codesign_measurement,
+    const hmac_digest_t *otp_rot_creator_auth_state_measurement,
+    const cert_key_id_pair_t *key_ids, const mldsa_public_key_t *uds_pubkey,
+    uint8_t *tbs_cert, size_t *tbs_cert_size) {
+  // Use template generation code based on fields defined `uds.hjson`
+  uds_tbs_values_t uds_tbs_params = {0};
+  if (uds_pubkey->param_set == kMldsaParameterSet44) {
+    uds_tbs_params.creator_pub_key_alg = kUdsKeygenAlgMldsa44;
+    TEMPLATE_SET(uds_tbs_params, Uds, CreatorPubKeyMldsa44,
+                 uds_pubkey->key.key_44.key);
+  } else if (uds_pubkey->param_set == kMldsaParameterSet87) {
+    uds_tbs_params.creator_pub_key_alg = kUdsKeygenAlgMldsa87;
+    TEMPLATE_SET(uds_tbs_params, Uds, CreatorPubKeyMldsa87,
+                 uds_pubkey->key.key_87.key);
+  } else {
+    return kErrorCertInvalidArgument;
+  }
+  uds_tbs_params.signature_alg = kUdsSignatureAlgMldsa87;
+  TEMPLATE_SET(uds_tbs_params, Uds, OtpCreatorSwCfgHash,
+               otp_creator_sw_cfg_measurement->digest);
+  TEMPLATE_SET(uds_tbs_params, Uds, OtpOwnerSwCfgHash,
+               otp_owner_sw_cfg_measurement->digest);
+  TEMPLATE_SET(uds_tbs_params, Uds, OtpRotCreatorAuthCodesignHash,
+               otp_rot_creator_auth_codesign_measurement->digest);
+  TEMPLATE_SET(uds_tbs_params, Uds, OtpRotCreatorAuthStateHash,
+               otp_rot_creator_auth_state_measurement->digest);
+  TEMPLATE_SET(uds_tbs_params, Uds, DebugFlag, is_debug_exposed());
+
+  TEMPLATE_SET_TRUNCATED(uds_tbs_params, Uds, CreatorPubKeyId,
+                         key_ids->cert->digest, kCertKeyIdSizeInBytes);
+  TEMPLATE_SET_TRUNCATED(uds_tbs_params, Uds, AuthKeyKeyId,
+                         key_ids->endorsement->digest, kCertKeyIdSizeInBytes);
+
+  HARDENED_RETURN_IF_ERROR(
+      uds_build_tbs(&uds_tbs_params, tbs_cert, tbs_cert_size));
   return kErrorOk;
 }

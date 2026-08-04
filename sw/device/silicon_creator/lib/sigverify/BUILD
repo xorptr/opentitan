@@ -33,6 +33,14 @@ cc_library(
 )
 
 cc_library(
+    name = "mldsa_key",
+    hdrs = ["mldsa_key.h"],
+    deps = [
+        "//third_party/embedpqc:mldsa44_tiny",
+    ],
+)
+
+cc_library(
     name = "rsa_key",
     srcs = ["rsa_key.c"],
     hdrs = ["rsa_key.h"],
