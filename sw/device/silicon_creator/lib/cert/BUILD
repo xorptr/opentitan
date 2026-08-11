@@ -214,11 +214,26 @@ cc_library(
 )
 
 cc_library(
+    name = "dice_mldsa_api",
+    hdrs = ["dice_mldsa.h"],
+    deps = [
+        ":cert",
+        "//sw/device/lib/base:macros",
+        "//sw/device/silicon_creator/lib:error",
+        "//sw/device/silicon_creator/lib:keymgr_binding",
+        "//sw/device/silicon_creator/lib/drivers:hmac",
+        "//sw/device/silicon_creator/lib/drivers:keymgr",
+        "//sw/device/silicon_creator/lib/sigverify:mldsa_key",
+    ],
+)
+
+cc_library(
     name = "dice_mldsa",
     srcs = ["dice_mldsa.c"],
     deps = [
         ":cert",
         ":dice_api",
+        ":dice_mldsa_api",
         ":dice_storage",
         ":ram_msg",
         ":seeds",

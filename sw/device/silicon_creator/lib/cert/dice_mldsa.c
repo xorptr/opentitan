@@ -2,6 +2,8 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
+#include "sw/device/silicon_creator/lib/cert/dice_mldsa.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -44,6 +46,11 @@
 
 enum {
   kDiceSlotSize = 936,
+};
+
+const keygen_params_t kUdsKeygenParams = {
+    .ecc_cfg = &kDiceKeyUds,
+    .mldsa_cfg = &kDiceKeyMldsaUds,
 };
 
 const dice_storage_slot_t kDiceStorageCdi0Ecdsa = DICE_STORAGE_SLOT(
@@ -92,17 +99,6 @@ static uint8_t pubkey_buffer[kCdiHybridExactPubKeyMldsaSizeBytes];
 
 static uint8_t mldsa_scratch[kDiceMldsaAttestationScratchBufferSize]
     __attribute__((aligned(16)));
-
-// Keymgr configurations for deriving attestation keys.
-typedef struct keygen_params {
-  const sc_keymgr_ecc_key_t *ecc_cfg;
-  const sc_keymgr_ecc_key_t *mldsa_cfg;
-} keygen_params_t;
-
-static const keygen_params_t kUdsKeygenParams = {
-    .ecc_cfg = &kDiceKeyUds,
-    .mldsa_cfg = &kDiceKeyMldsaUds,
-};
 
 static const keygen_params_t kCdi0KeygenParams = {
     .ecc_cfg = &kDiceKeyCdi0,
@@ -212,13 +208,7 @@ static bool get_debug_mode_cdi1(owner_app_domain_t key_domain) {
   return false;
 }
 
-/**
- * Derives a 256-bit ML-DSA certificate ID from a seed.
- *
- * @param seed The ML-DSA key seed.
- * @param[out] id The computed public key ID.
- */
-static void get_mldsa_id(const hmac_key_t *seed, hmac_digest_t *id) {
+void get_mldsa_id(const hmac_key_t *seed, hmac_digest_t *id) {
   hmac_hmac_sha256("ID", 2, *seed, /*big_endian_digest=*/true, id);
 }
 
@@ -308,14 +298,8 @@ static rom_error_t dice_cdi_hybrid_cert_build(
   return cdi_hybrid_build_cert(&sig_params, cert, cert_size);
 }
 
-/**
- * Derives a 256-bit ML-DSA private key seed using the SP800-133r3 scheme.
- *
- * @param params Key generation parameters.
- * @param[out] seed_output Derived 256-bit ML-DSA key seed.
- */
-static rom_error_t dice_mldsa_derive_seed(const keygen_params_t *params,
-                                          keymgr_binding_value_t *seed_output) {
+rom_error_t dice_mldsa_derive_seed(const keygen_params_t *params,
+                                   keymgr_binding_value_t *seed_output) {
   HARDENED_RETURN_IF_ERROR(sc_keymgr_generate_key_sw(
       kScKeymgrKeyTypeAttestation, *params->mldsa_cfg->keymgr_diversifier,
       seed_output));
